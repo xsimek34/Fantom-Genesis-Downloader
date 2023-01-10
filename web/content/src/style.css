@@ -1,0 +1,40 @@
+body, html {
+    font-family: proxima-nova, sans-serif;
+    margin: 1%;
+    width:98%;
+    height:98%;
+}
+
+.files {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.files td, .files th {
+    border: 1px solid #ddd;
+    padding: 8px;
+}
+
+.files tr:nth-child(even){
+    background-color: #f2f2f2;
+}
+
+.files tr:hover {
+    background-color: #ddd;
+}
+
+.files th {
+    padding-top: 12px;
+    padding-bottom: 12px;
+    text-align: center;
+    background-color: #007bff;
+    color: white;
+}
+
+.files .flag {
+    text-align: center;
+}
+
+.files .number {
+    text-align: right;
+}

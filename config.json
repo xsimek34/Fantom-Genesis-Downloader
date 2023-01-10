@@ -1,0 +1,144 @@
+{
+  "port" : "8765",
+  "db_path" : "db.json",
+  "md5s_path": "/var/data/md5/",
+  "static_files_path": "/var/data/static/",
+  "password": "1OZVijnfGCZ4QUxGU6lorQIbtpw6VYr",
+  "buffer_size": 4096,
+  "categories": [
+    {
+      "name": "mainnet",
+      "description": "MainNet Genesis Files",
+      "units_path": "/var/data/units/",
+      "compare_servers": [
+      "http://105.25.36.150/",
+      "http://249.27.39.102/"
+      ],
+      "dynamic_files": [
+        {
+          "type": "no-mpt",
+          "fullsync": false,
+          "snapsync": true,
+          "block_history": "Full",
+          "evm_history": "No"
+        },
+        {
+          "type": "pruned-mpt",
+          "fullsync": true,
+          "snapsync": true,
+          "block_history": "Full",
+          "evm_history": "Pruned (one block)"
+        },
+        {
+          "type": "full-mpt",
+          "fullsync": true,
+          "snapsync": true,
+          "block_history": "Full",
+          "evm_history": "Full"
+        }
+      ],
+      "static_files": [
+        {
+          "name": "mainnet-5577-pruned-mpt.g",
+          "md5": "mainnet-5577-pruned-mpt.g.md5",
+          "epoch": 5577,
+          "block": 4564025,
+          "fullsync": true,
+          "snapsync": false,
+          "block_history": "Full",
+          "evm_history": "Pruned (one block)",
+          "file_size": 1100000000
+        },
+        {
+          "name": "mainnet-5577-full-mpt.g",
+          "md5": "mainnet-5577-full-mpt.g.md5",
+          "epoch": 5577,
+          "block": 4564025,
+          "fullsync": true,
+          "snapsync": false,
+          "block_history": "Full",
+          "evm_history": "Full",
+          "file_size": 30400000000
+        },
+        {
+          "name": "mainnet-109331-no-history.g",
+          "md5": "mainnet-109331-no-history.g.md5",
+          "epoch": 109331,
+          "block": 37676547,
+          "fullsync": false,
+          "snapsync": true,
+          "block_history": "37,676,547+",
+          "evm_history": "No",
+          "file_size": 16326
+        }
+      ]
+    },
+    {
+      "name": "testnet",
+      "description": "Public TestNet Genesis Files",
+      "units_path" : "/var/data/units/",
+      "compare_servers": [
+        "http://105.25.36.150/",
+        "http://249.27.39.102/"
+      ],
+      "dynamic_files": [
+        {
+          "type": "no-mpt",
+          "fullsync": false,
+          "snapsync": true,
+          "block_history": "Full",
+          "evm_history": "No"
+        },
+        {
+          "type": "pruned-mpt",
+          "fullsync": true,
+          "snapsync": true,
+          "block_history": "Full",
+          "evm_history": "Pruned (one block)"
+        },
+        {
+          "type": "full-mpt",
+          "fullsync": true,
+          "snapsync": true,
+          "block_history": "Full",
+          "evm_history": "Full"
+        }
+      ],
+      "static_files": [
+        {
+          "name": "testnet-6226-no-history.g",
+          "md5": "testnet-6226-no-history.g.md5",
+          "epoch": 6226,
+          "block": 7650765,
+          "fullsync": false,
+          "snapsync": true,
+          "block_history": "7,650,765+",
+          "evm_history": "No",
+          "file_size": 1700
+        },
+        {
+          "name": "testnet-6226-pruned-mpt.g",
+          "md5": "testnet-6226-pruned-mpt.g.md5",
+          "epoch": 6226,
+          "block": 7650765,
+          "fullsync": true,
+          "snapsync": true,
+          "block_history": "Full",
+          "evm_history": "Pruned (one block)",
+          "file_size": 3200000000
+        },
+        {
+          "name": "testnet-6226-full-mpt.g",
+          "md5": "testnet-6226-full-mpt.g",
+          "epoch": 6226,
+          "block": 7650765,
+          "fullsync": true,
+          "snapsync": true,
+          "block_history": "Full",
+          "evm_history": "Full",
+          "file_size": 76500000000
+        }
+      ]
+    }
+  ]
+}
