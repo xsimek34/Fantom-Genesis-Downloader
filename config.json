@@ -1,5 +1,6 @@
 {
   "port" : "1111",
+  "server_name" : "1111",
   "db_path" : "db.json",
   "md5s_path": "/var/data/md5/",
   "static_files_path": "/var/data/static/",
@@ -11,7 +12,14 @@
       "description": "MainNet Genesis Files",
       "units_path": "/var/data/units/",
       "compare_servers": [
-      "http://localhost:2222/"
+        {
+          "server_name": "2222",
+          "url" : "http://localhost:2222/"
+        },
+        {
+          "server_name" : "3333",
+          "url" : "http://localhost:3333/"
+        }
       ],
       "dynamic_files": [
         {

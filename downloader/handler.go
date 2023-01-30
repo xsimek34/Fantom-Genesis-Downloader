@@ -122,11 +122,13 @@ func newGenesisHandler() http.Handler {
 		}
 		db.Lock()
 
-		// TODO: dot not create if already exist
-
 		for _, unitCategory := range db.UnitsCategories {
 			if unitCategory.CategoryName == newUnit.Category {
-				unitCategory.Units = append(unitCategory.Units, &api.Unit{Index: newUnit.Index, Epoch: newUnit.Epoch})
+				if len(unitCategory.Units) == newUnit.Index {
+					unitCategory.Units = append(unitCategory.Units, &api.Unit{Index: newUnit.Index, Epoch: newUnit.Epoch})
+				} else {
+					fmt.Println("incorrect unit number")
+				}
 			}
 		}
 		saveDb()
@@ -171,7 +173,7 @@ func checkHashHandler() http.Handler {
 		defer checkServers.Unlock()
 
 		for i, server := range checkServers.CheckServers {
-			if server.Category == checkHash.Category && checkHash.Type == server.Type {
+			if server.Category == checkHash.Category && checkHash.Type == server.Type && checkHash.Name == server.Name {
 				checkServers.CheckServers[i].Hash = checkHash.Hash
 				rw.WriteHeader(200)
 				var done = "done"
@@ -327,65 +329,66 @@ func generateMD5(genesisType string, latestUnit int, latestEpoch int, categoryNa
 
 	var filename = config.Md5sPath + categoryName + "-" + strconv.Itoa(latestEpoch) + "-" + genesisType + ".g" + ".md5"
 	// get hash from slices
-	if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) {
-		var units = api.GetUnitsArray(genesisType, latestUnit, "")
-		hasher := md5.New()
 
-		for _, unit := range units {
+	var units = api.GetUnitsArray(genesisType, latestUnit, "")
+	hasher := md5.New()
 
-			file, err := os.Open(category.UnitsPath + unit)
-			if err != nil {
-				fmt.Println("could not open file")
-				return
-			}
+	for _, unit := range units {
 
-			b1 := make([]byte, bufferSize)
-
-			for true {
-				n1, err := file.Read(b1)
-				if n1 == 0 {
-					break
-				}
-
-				if err != nil {
-					fmt.Println("could not read from file")
-				}
-
-				hasher.Write(b1[:n1])
-			}
+		file, err := os.Open(category.UnitsPath + unit)
+		if err != nil {
+			fmt.Println("could not open file")
+			return
 		}
 
-		// get hash from hasher
-		var hash = hex.EncodeToString(hasher.Sum(nil))
+		b1 := make([]byte, bufferSize)
 
-		// send hash to servers
+		for true {
+			n1, err := file.Read(b1)
+			if n1 == 0 {
+				break
+			}
+
+			if err != nil {
+				fmt.Println("could not read from file")
+			}
+
+			hasher.Write(b1[:n1])
+		}
+	}
+
+	// get hash from hasher
+	var hash = hex.EncodeToString(hasher.Sum(nil))
+
+	// send hash to servers
+	checkServers.Lock()
+	for _, server := range checkServers.CheckServers {
+		if server.Category == categoryName && server.Type == genesisType {
+			server.Hash = ""
+			sendHashToServer(hash, server.Url, config.Password, categoryName, genesisType)
+		}
+	}
+	checkServers.Unlock()
+
+	// wait for check hashes from other servers
+	for true {
+		var validated = true
 		checkServers.Lock()
 		for _, server := range checkServers.CheckServers {
 			if server.Category == categoryName && server.Type == genesisType {
-				server.Hash = ""
-				sendHashToServer(hash, server.Server, config.Password, categoryName, genesisType)
+				if server.Hash != hash {
+					validated = false
+				}
 			}
 		}
 		checkServers.Unlock()
-
-		// wait for check hashes from other servers
-		for true {
-			var validated = true
-			checkServers.Lock()
-			for _, server := range checkServers.CheckServers {
-				if server.Category == categoryName && server.Type == genesisType {
-					if server.Hash != hash {
-						validated = false
-					}
-				}
-			}
-			checkServers.Unlock()
-			if validated {
-				break
-			}
-			time.Sleep(10 * time.Second)
+		if validated {
+			break
 		}
+		time.Sleep(10 * time.Second)
+	}
 
+	if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) {
 		// after check generate md5 file
 		f, err := os.Create(filename)
 		if err != nil {
@@ -396,13 +399,17 @@ func generateMD5(genesisType string, latestUnit int, latestEpoch int, categoryNa
 
 		api.UpdateData(&db, &config)
 		fmt.Println("Generating MD5 for " + categoryName + "-" + genesisType + " is done.")
+	} else {
+		fmt.Println("MD5 for " + categoryName + "-" + genesisType + " is already generated")
 	}
+
 }
 
 func sendHashToServer(hash string, server string, password string, category string, genesisType string) {
 	var hashRequest = CheckHash{
 		Hash:     hash,
 		Password: password,
+		Name:     config.Name,
 		Category: category,
 		Type:     genesisType,
 	}

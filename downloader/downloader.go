@@ -29,13 +29,15 @@ type CheckHash struct {
 	Password string `json:"password"`
 	Category string `json:"category"`
 	Type     string `json:"type"`
+	Name     string `json:"name"`
 }
 
 type CheckServer struct {
 	Category string
 	Type     string
-	Server   string
+	Url      string
 	Hash     string
+	Name     string
 }
 
 type CheckServers struct {
@@ -80,7 +82,8 @@ func loadCheckServers() {
 				checkServers.CheckServers = append(checkServers.CheckServers, CheckServer{
 					Category: c.Name,
 					Type:     f.Type,
-					Server:   cs,
+					Url:      cs.Url,
+					Name:     cs.Name,
 					Hash:     "",
 				})
 			}

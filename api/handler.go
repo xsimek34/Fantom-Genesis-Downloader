@@ -11,6 +11,7 @@ import (
 )
 
 type Config struct {
+	Name            string      `json:"server_name"`
 	Port            string      `json:"port"`
 	DbPath          string      `json:"db_path"`
 	Md5sPath        string      `json:"md5s_path"`
@@ -36,12 +37,17 @@ type UnitCategory struct {
 }
 
 type Category struct {
-	Name           string         `json:"name"`
-	Description    string         `json:"description"`
-	UnitsPath      string         `json:"units_path"`
-	CompareServers []string       `json:"compare_servers"`
-	DynamicFiles   []*DynamicFile `json:"dynamic_files"`
-	StaticFiles    []*GenesisFile `json:"static_files"`
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	UnitsPath      string          `json:"units_path"`
+	CompareServers []CompareServer `json:"compare_servers"`
+	DynamicFiles   []*DynamicFile  `json:"dynamic_files"`
+	StaticFiles    []*GenesisFile  `json:"static_files"`
+}
+
+type CompareServer struct {
+	Name string `json:"server_name"`
+	Url  string `json:"url"`
 }
 
 type DynamicFile struct {
