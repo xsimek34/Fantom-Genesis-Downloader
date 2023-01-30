@@ -24,10 +24,6 @@ func dynamicHandler() http.Handler {
 
 		var url = req.URL.Path
 
-		//TODO: maybe file name regex check
-
-		//TODO: remove fmt.Printlines
-
 		var filename string
 		url = strings.Replace(url, "/dynamic/", "", 1)
 		filename = url
@@ -112,6 +108,8 @@ func newGenesisHandler() http.Handler {
 
 		b, err := io.ReadAll(req.Body)
 
+		defer req.Body.Close()
+
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -123,7 +121,8 @@ func newGenesisHandler() http.Handler {
 			return
 		}
 		db.Lock()
-		defer db.Unlock()
+
+		// TODO: dot not create if already exist
 
 		for _, unitCategory := range db.UnitsCategories {
 			if unitCategory.CategoryName == newUnit.Category {
@@ -132,14 +131,20 @@ func newGenesisHandler() http.Handler {
 		}
 		saveDb()
 
+		db.Unlock()
+
 		rw.WriteHeader(200)
 		for _, category := range config.Categories {
 			if category.Name == newUnit.Category {
 				for _, file := range category.DynamicFiles {
-					go generateMD5(file.Type, newUnit.Index, newUnit.Category)
+					go generateMD5(file.Type, newUnit.Index, newUnit.Epoch, newUnit.Category)
 				}
 			}
 		}
+
+		var done = "done"
+
+		rw.Write([]byte(done))
 
 		api.UpdateData(&db, &config)
 	})
@@ -161,17 +166,16 @@ func checkHashHandler() http.Handler {
 			fmt.Println("bad password")
 			return
 		}
-		db.Lock()
-		defer db.Unlock()
 
 		checkServers.Lock()
+		defer checkServers.Unlock()
 
-		var serverName = ""
-
-		for _, server := range checkServers.CheckServers {
-			if server.Category == checkHash.Category && server.Server == serverName && checkHash.Type == server.Type {
-				server.Hash = checkHash.Hash
+		for i, server := range checkServers.CheckServers {
+			if server.Category == checkHash.Category && checkHash.Type == server.Type {
+				checkServers.CheckServers[i].Hash = checkHash.Hash
 				rw.WriteHeader(200)
+				var done = "done"
+				rw.Write([]byte(done))
 				return
 			}
 		}
@@ -203,9 +207,6 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 		rw.Header().Set("accept-range", "bytes")
 		rw.WriteHeader(200)
 
-		fmt.Println(req.Header)
-		fmt.Println(rw.Header())
-
 		for _, unit := range units {
 			file, err := os.Open(unit)
 			if err != nil {
@@ -218,7 +219,6 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 			for true {
 				select {
 				case <-done:
-					fmt.Println("done")
 					return
 				default:
 				}
@@ -231,7 +231,6 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 					fmt.Println("could not read from file")
 				}
 				rw.Write(b1[:n1])
-				time.Sleep(1 * time.Millisecond) // TODO: remove
 			}
 		}
 	} else {
@@ -247,9 +246,6 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 		rw.Header().Set("Content-Length", strconv.Itoa(byteRange))
 		rw.Header().Set("Content-Range", "bytes "+strconv.Itoa(from)+"-"+strconv.Itoa(to)+"/"+strconv.Itoa(int(contentLength)))
 		rw.WriteHeader(206)
-
-		fmt.Println(req.Header)
-		fmt.Println(rw.Header())
 
 		for _, unit := range unitsInfo {
 			file, err := os.Open(unit.name)
@@ -274,7 +270,6 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 			for true {
 				select {
 				case <-done:
-					fmt.Println("done")
 					return
 				default:
 				}
@@ -288,7 +283,6 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 						fmt.Println("could not read from file")
 					}
 					written, err := rw.Write(b1[:n1])
-					time.Sleep(1 * time.Millisecond) // TODO: remove
 					byteRange = byteRange - written
 					if err != nil {
 						log.Fatalln(err)
@@ -296,7 +290,6 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 				} else if byteRange == 0 {
 					break
 				} else {
-					fmt.Println(byteRange)
 					b2 := make([]byte, byteRange)
 					n2, err := file.Read(b2)
 					if n2 == 0 {
@@ -323,7 +316,7 @@ func getBytes(bytes string) (int, int) {
 	return from, to
 }
 
-func generateMD5(genesisType string, latestUnit int, categoryName string) {
+func generateMD5(genesisType string, latestUnit int, latestEpoch int, categoryName string) {
 	// set category
 	var category *api.Category
 	for _, c := range config.Categories {
@@ -332,9 +325,10 @@ func generateMD5(genesisType string, latestUnit int, categoryName string) {
 		}
 	}
 
+	var filename = config.Md5sPath + categoryName + "-" + strconv.Itoa(latestEpoch) + "-" + genesisType + ".g" + ".md5"
 	// get hash from slices
-	if _, err := os.Stat(config.Md5sPath + genesisType + "-" + strconv.Itoa(latestUnit) + ".md5"); errors.Is(err, os.ErrNotExist) {
-		var units = api.GetUnitsArray(genesisType, latestUnit, "") // TODO: invalid argument here
+	if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) {
+		var units = api.GetUnitsArray(genesisType, latestUnit, "")
 		hasher := md5.New()
 
 		for _, unit := range units {
@@ -379,8 +373,10 @@ func generateMD5(genesisType string, latestUnit int, categoryName string) {
 			var validated = true
 			checkServers.Lock()
 			for _, server := range checkServers.CheckServers {
-				if server.Hash != hash {
-					validated = false
+				if server.Category == categoryName && server.Type == genesisType {
+					if server.Hash != hash {
+						validated = false
+					}
 				}
 			}
 			checkServers.Unlock()
@@ -390,14 +386,15 @@ func generateMD5(genesisType string, latestUnit int, categoryName string) {
 			time.Sleep(10 * time.Second)
 		}
 
-		// after checked generate md5 file
-		f, err := os.Create(config.Md5sPath + genesisType + "-" + strconv.Itoa(latestUnit) + ".md5")
+		// after check generate md5 file
+		f, err := os.Create(filename)
 		if err != nil {
 			fmt.Println("could not create file")
 			return
 		}
 		f.Write([]byte(hex.EncodeToString(hasher.Sum(nil))))
 
+		api.UpdateData(&db, &config)
 		fmt.Println("Generating MD5 for " + categoryName + "-" + genesisType + " is done.")
 	}
 }
@@ -412,14 +409,14 @@ func sendHashToServer(hash string, server string, password string, category stri
 
 	postBody, _ := json.Marshal(hashRequest)
 	responseBody := bytes.NewBuffer(postBody)
-	//Leverage Go's HTTP Post function to make request
+
 	resp, err := http.Post(server+"hash/", "application/json", responseBody)
-	//Handle Error
+
 	if err != nil {
 		log.Fatalf("An Error Occured %v", err)
 	}
 	defer resp.Body.Close()
-	//Read the response body
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatalln(err)
@@ -427,45 +424,3 @@ func sendHashToServer(hash string, server string, password string, category stri
 	sb := string(body)
 	log.Printf(sb)
 }
-
-//func getUnits(unitType string, fromIndex int, toIndex int, unitsPath string) []string {
-//	var unitName = ""
-//	if unitType == "blocks" {
-//		unitName = "brs"
-//	} else if unitType == "epochs" {
-//		unitName = "ers"
-//	} else if unitType == "evm" {
-//		unitName = "evm"
-//	}
-//
-//	var units []string
-//
-//	if fromIndex == toIndex {
-//		units = append(units, unitsPath+unitType+"/"+unitName+"-"+strconv.Itoa(toIndex)+".g")
-//	} else {
-//		var i int
-//		for i = 0; i <= toIndex; i++ {
-//			units = append(units, unitsPath+unitType+"/"+unitName+"-"+strconv.Itoa(i)+".g")
-//		}
-//	}
-//	return units
-//}
-
-//func getUnitsArray(genesisType string, latestUnit int, unitsPath string) []string {
-//	var units []string
-//
-//	if genesisType == "full-mpt" {
-//		units = append(units, getUnits("blocks", 0, latestUnit, unitsPath)...)
-//		units = append(units, getUnits("epochs", 0, latestUnit, unitsPath)...)
-//		units = append(units, getUnits("evm", 0, latestUnit, unitsPath)...)
-//	} else if genesisType == "pruned-mpt" {
-//		units = append(units, getUnits("blocks", 0, latestUnit, unitsPath)...)
-//		units = append(units, getUnits("epochs", 0, latestUnit, unitsPath)...)
-//		units = append(units, getUnits("evm", latestUnit, latestUnit, unitsPath)...)
-//	} else if genesisType == "no-mpt" {
-//		units = append(units, getUnits("blocks", 0, latestUnit, unitsPath)...)
-//		units = append(units, getUnits("epochs", 0, latestUnit, unitsPath)...)
-//	}
-//
-//	return units
-//}

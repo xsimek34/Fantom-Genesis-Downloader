@@ -1,5 +1,5 @@
 {
-  "port" : "8765",
+  "port" : "1111",
   "db_path" : "db.json",
   "md5s_path": "/var/data/md5/",
   "static_files_path": "/var/data/static/",
@@ -11,8 +11,7 @@
       "description": "MainNet Genesis Files",
       "units_path": "/var/data/units/",
       "compare_servers": [
-      "http://105.25.36.150/",
-      "http://249.27.39.102/"
+      "http://localhost:2222/"
       ],
       "dynamic_files": [
         {

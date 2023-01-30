@@ -52,6 +52,7 @@ var config api.Config
 func Init(path string) {
 	configPath = path
 	config = loadConfig()
+	loadCheckServers()
 
 	db.Lock()
 	defer db.Unlock()
@@ -69,16 +70,7 @@ func Init(path string) {
 	serve()
 }
 
-func loadConfig() api.Config {
-	file, err := ioutil.ReadFile(configPath)
-	if err != nil {
-		fmt.Println("can not open file")
-	}
-
-	data := api.Config{}
-	json.Unmarshal(file, &data)
-	bufferSize = data.BufferSize
-
+func loadCheckServers() {
 	checkServers.Lock()
 	defer checkServers.Unlock()
 
@@ -94,6 +86,18 @@ func loadConfig() api.Config {
 			}
 		}
 	}
+}
+
+func loadConfig() api.Config {
+	file, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		fmt.Println("can not open file")
+	}
+
+	data := api.Config{}
+	json.Unmarshal(file, &data)
+	bufferSize = data.BufferSize
+
 	return data
 }
 
