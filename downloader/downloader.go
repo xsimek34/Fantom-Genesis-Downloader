@@ -2,12 +2,12 @@ package downloader
 
 import (
 	"Fantom-Genesis-Generator/api"
+	"Fantom-Genesis-Generator/logger"
 	"Fantom-Genesis-Generator/web"
 	"encoding/json"
-	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -50,8 +50,11 @@ var configPath string
 var bufferSize int
 var db api.Db
 var config api.Config
+var log logger.Logger
 
 func Init(path string) {
+	log = logger.New()
+
 	configPath = path
 	config = loadConfig()
 	loadCheckServers()
@@ -67,7 +70,7 @@ func Init(path string) {
 		}
 	}
 
-	api.UpdateData(&db, &config)
+	api.UpdateData(&db, &config, log)
 
 	serve()
 }
@@ -92,26 +95,34 @@ func loadCheckServers() {
 }
 
 func loadConfig() api.Config {
-	file, err := ioutil.ReadFile(configPath)
+	file, err := os.ReadFile(configPath)
 	if err != nil {
-		fmt.Println("can not open file")
+		log.Fatal("can not open config file:", err)
 	}
 
 	data := api.Config{}
-	json.Unmarshal(file, &data)
-	bufferSize = data.BufferSize
 
+	err = json.Unmarshal(file, &data)
+	if err != nil {
+		log.Fatal("can not unmarshal config file:", err)
+	}
+
+	bufferSize = data.BufferSize
 	return data
 }
 
 func loadDb() api.Db {
-	file, err := ioutil.ReadFile(config.DbPath)
+	file, err := os.ReadFile(config.DbPath)
 	if err != nil {
-		fmt.Println("can not open file")
+		log.Fatal("can not open db file:", err)
 	}
 
 	data := api.Db{}
-	json.Unmarshal(file, &data)
+
+	err = json.Unmarshal(file, &data)
+	if err != nil {
+		log.Fatal("can not unmarshal db file:", err)
+	}
 
 	return data
 }
@@ -119,13 +130,27 @@ func loadDb() api.Db {
 func saveDb() {
 	dataBytes, err := json.Marshal(db)
 	if err != nil {
-		fmt.Println("can not marshal data")
+		log.Error("can not marshal db data:", err)
 		return
 	}
 
-	err = ioutil.WriteFile(config.DbPath, dataBytes, 0644)
+	err = os.WriteFile(config.DbPath, dataBytes, 0644)
 	if err != nil {
-		fmt.Println("can not write to db")
+		log.Error("can not write data to db:", err)
+		return
+	}
+}
+
+func backupDb() {
+	dataBytes, err := json.Marshal(db)
+	if err != nil {
+		log.Error("can not marshal db backup data:", err)
+		return
+	}
+
+	err = os.WriteFile(config.BackupDbPath, dataBytes, 0644)
+	if err != nil {
+		log.Error("can not write data to backup db:", err)
 		return
 	}
 }
@@ -136,8 +161,8 @@ func handler() http.Handler {
 	getHandler.Handle("/dynamic/", dynamicHandler())
 	getHandler.Handle("/static/", staticHandler())
 	getHandler.Handle("/md5/", md5Handler())
-	getHandler.Handle("/api/", api.ApiHandler(&db, &config))
-	getHandler.Handle("/", web.WebContentHandler())
+	getHandler.Handle("/api/", api.ApiHandler(log))
+	getHandler.Handle("/", web.WebContentHandler(log))
 
 	postHandler := http.NewServeMux()
 	postHandler.Handle("/new/", newGenesisHandler())
@@ -147,7 +172,7 @@ func handler() http.Handler {
 		// make sure to close the request when done
 		defer func() {
 			if err := req.Body.Close(); err != nil {
-				fmt.Println("could not close request body")
+				log.Error("could not close request body:", err)
 			}
 		}()
 
@@ -174,5 +199,9 @@ func serve() {
 		ReadTimeout:    10 * time.Second,
 		MaxHeaderBytes: 8192,
 	}
-	s.ListenAndServe()
+	err := s.ListenAndServe()
+	if err != nil {
+		log.Fatal("can not start server:", err)
+		return
+	}
 }

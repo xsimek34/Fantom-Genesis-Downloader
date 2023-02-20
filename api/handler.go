@@ -1,9 +1,9 @@
 package api
 
 import (
+	"Fantom-Genesis-Generator/logger"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,6 +14,7 @@ type Config struct {
 	Name            string      `json:"server_name"`
 	Port            string      `json:"port"`
 	DbPath          string      `json:"db_path"`
+	BackupDbPath    string      `json:"backup_db_path"`
 	Md5sPath        string      `json:"md5s_path"`
 	StaticFilesPath string      `json:"static_files_path"`
 	BufferSize      int         `json:"buffer_size"`
@@ -88,20 +89,15 @@ var dataLock DataLock
 
 // ApiHandler handles the static content of the website
 // using resources stored within the embedded FS.
-func ApiHandler(db *Db, config *Config) http.Handler {
-
-	//updateData(db, config) //TODO: change location of this call, every event
-
-	// make the handler
+func ApiHandler(log logger.Logger) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 
 		rw.Header().Set("Content-Type", "application/json")
-
 		dataLock.RLock()
 		defer dataLock.RUnlock()
 
 		if _, err := rw.Write(dataLock.data); err != nil {
-			fmt.Errorf("could not write response; %s", err.Error())
+			log.Error("could not write response:", err)
 		}
 	})
 }
@@ -124,7 +120,7 @@ func getLatestEpochAndIndex(db *Db, category string) (int, int) {
 	return latestEpoch, latestIndex
 }
 
-func UpdateData(db *Db, config *Config) {
+func UpdateData(db *Db, config *Config, log logger.Logger) {
 	db.Lock()
 	defer db.Unlock()
 
@@ -151,7 +147,7 @@ func UpdateData(db *Db, config *Config) {
 
 			var latestEpoch, latestIndex = getLatestEpochAndIndex(db, c.Name)
 			if latestEpoch == -1 {
-				fmt.Println("could not get latest epoch number")
+				log.Error("could not get latest epoch number")
 				return
 			}
 			genesis.Epoch = latestEpoch
@@ -165,27 +161,27 @@ func UpdateData(db *Db, config *Config) {
 				genesis.Md5 = ""
 			}
 
-			genesis.FileSize = getFileSize(c.UnitsPath, f.Type, latestIndex)
+			genesis.FileSize = getFileSize(c.UnitsPath, f.Type, latestIndex, log)
 			webData.GenesisFiles = append(webData.GenesisFiles, genesis)
 		}
 	}
 
 	data, err := json.Marshal(webData)
 	if err != nil {
-		fmt.Errorf("could not marshal data; %s", err.Error())
+		log.Error("could not marshal data:", err)
 		return
 	}
 
 	dataLock.data = data
 }
 
-func getFileSize(unitsPath string, genesisType string, latestIndex int) int {
+func getFileSize(unitsPath string, genesisType string, latestIndex int, log logger.Logger) int {
 	var units = GetUnitsArray(genesisType, latestIndex, unitsPath)
 	var contentLength int64
 	for _, unitName := range units {
 		fi, err := os.Stat(unitName)
 		if err != nil {
-			fmt.Println("could not open file")
+			log.Error("could not open unit file:", err)
 		}
 		contentLength += fi.Size()
 	}

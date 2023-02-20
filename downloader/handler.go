@@ -7,10 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -19,6 +16,7 @@ import (
 	"time"
 )
 
+// dynamicHandler handles the dynamic genesis files of different type
 func dynamicHandler() http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 
@@ -34,7 +32,7 @@ func dynamicHandler() http.Handler {
 
 		epochNumber, err := strconv.Atoi(parsed[1])
 		if err != nil {
-			fmt.Println("could not parse epoch number")
+			log.Error("could not parse epoch number:", err)
 			rw.WriteHeader(404)
 			return
 		}
@@ -65,13 +63,13 @@ func dynamicHandler() http.Handler {
 		}
 
 		if len(unitsPath) == 0 {
-			fmt.Println("could not find category")
+			log.Notice("could not find category")
 			rw.WriteHeader(404)
 			return
 		}
 
 		if latestUnit == -1 {
-			fmt.Println("could not unit with " + strconv.Itoa(epochNumber) + " epoch number")
+			log.Notice("could not unit with " + strconv.Itoa(epochNumber) + " epoch number")
 			rw.WriteHeader(404)
 			return
 		}
@@ -81,6 +79,7 @@ func dynamicHandler() http.Handler {
 	})
 }
 
+// staticHandler handles the static genesis files which is mentioned in config
 func staticHandler() http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 
@@ -92,6 +91,7 @@ func staticHandler() http.Handler {
 	})
 }
 
+// md5Handler handles the md5 files (dynamic and static)
 func md5Handler() http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		var filename = strings.Replace(req.URL.Path, "/md5/", "", 1)
@@ -102,37 +102,46 @@ func md5Handler() http.Handler {
 	})
 }
 
+// newGenesisHandler handles the requests after generating new slices and starts generation of md5 files
 func newGenesisHandler() http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		var newUnit NewUnit
 
 		b, err := io.ReadAll(req.Body)
 
-		defer req.Body.Close()
+		defer func() {
+			err = req.Body.Close()
+			if err != nil {
+				log.Error("could not close request body:", err)
+			}
+		}()
 
 		if err != nil {
-			log.Fatalln(err)
+			log.Error("could not read request body:", err)
 		}
 
-		json.Unmarshal(b, &newUnit)
+		err = json.Unmarshal(b, &newUnit)
+		if err != nil {
+			log.Error("could not unmarshal request body:", err)
+		}
 
 		if newUnit.Password != config.Password {
-			fmt.Println("bad password")
+			log.Notice("wrong password")
 			return
 		}
 		db.Lock()
+		backupDb()
 
 		for _, unitCategory := range db.UnitsCategories {
 			if unitCategory.CategoryName == newUnit.Category {
 				if len(unitCategory.Units) == newUnit.Index {
 					unitCategory.Units = append(unitCategory.Units, &api.Unit{Index: newUnit.Index, Epoch: newUnit.Epoch})
 				} else {
-					fmt.Println("incorrect unit number")
+					log.Notice("incorrect unit number")
 				}
 			}
 		}
 		saveDb()
-
 		db.Unlock()
 
 		rw.WriteHeader(200)
@@ -144,14 +153,11 @@ func newGenesisHandler() http.Handler {
 			}
 		}
 
-		var done = "done"
-
-		rw.Write([]byte(done))
-
-		api.UpdateData(&db, &config)
+		api.UpdateData(&db, &config, log)
 	})
 }
 
+// checkHashHandler received hashes from other servers
 func checkHashHandler() http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		var checkHash CheckHash
@@ -159,13 +165,16 @@ func checkHashHandler() http.Handler {
 		b, err := io.ReadAll(req.Body)
 
 		if err != nil {
-			log.Fatalln(err)
+			log.Error("could not read request body:", err)
 		}
 
-		json.Unmarshal(b, &checkHash)
+		err = json.Unmarshal(b, &checkHash)
+		if err != nil {
+			log.Error("could not unmarshal hash data:", err)
+		}
 
 		if checkHash.Password != config.Password {
-			fmt.Println("bad password")
+			log.Notice("wrong password")
 			return
 		}
 
@@ -176,23 +185,32 @@ func checkHashHandler() http.Handler {
 			if server.Category == checkHash.Category && checkHash.Type == server.Type && checkHash.Name == server.Name {
 				checkServers.CheckServers[i].Hash = checkHash.Hash
 				rw.WriteHeader(200)
-				var done = "done"
-				rw.Write([]byte(done))
+				var message = "hash received: server: " + config.Name + "; hash: " + checkHash.Hash + "; type: " + checkHash.Type
+				_, err := rw.Write([]byte(message))
+				if err != nil {
+					log.Error("could not write to response writer:", err)
+				}
 				return
 			}
 		}
-		fmt.Println("could not find specified server in list")
 		rw.WriteHeader(404)
+		var message = "could not find specified server in list: server: " + config.Name + "; hash: " + checkHash.Hash + "; type: " + checkHash.Type
+
+		_, err = rw.Write([]byte(message))
+		if err != nil {
+			log.Error("could not write to response writer:", err)
+		}
 	})
 }
 
+// sendResponse returns genesis file or specified range of genesis file
 func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, filename string) {
 	var unitsInfo []unit
 	var contentLength int64
 	for _, unitName := range units {
 		fi, err := os.Stat(unitName)
 		if err != nil {
-			fmt.Println("could not open file")
+			log.Error("could not open unit file:", err)
 			rw.WriteHeader(404)
 			return
 		}
@@ -212,7 +230,7 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 		for _, unit := range units {
 			file, err := os.Open(unit)
 			if err != nil {
-				fmt.Println("could not open file")
+				log.Error("could not open unit file:", err)
 				return
 			}
 
@@ -230,13 +248,16 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 				}
 
 				if err != nil {
-					fmt.Println("could not read from file")
+					log.Error("could not read from unit file:", err)
 				}
-				rw.Write(b1[:n1])
+				_, err = rw.Write(b1[:n1])
+				if err != nil {
+					log.Error("could not write to response writer:", err)
+				}
 			}
 		}
 	} else {
-		var from, to = getBytes(req.Header.Get("Range"))
+		var from, to = getByteRange(req.Header.Get("Range"))
 
 		if to == 0 {
 			to = int(contentLength - 1)
@@ -252,7 +273,7 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 		for _, unit := range unitsInfo {
 			file, err := os.Open(unit.name)
 			if err != nil {
-				fmt.Println("could not open file")
+				log.Error("could not open unit file:", err)
 				return
 			}
 
@@ -262,14 +283,14 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 			} else if from > 0 {
 				_, err = file.Seek(int64(from), io.SeekStart)
 				if err != nil {
-					fmt.Println("could not read from file")
+					log.Error("could not read from unit file:", err)
 				}
 				from = 0
 			}
 
 			b1 := make([]byte, bufferSize)
 
-			for true {
+			for {
 				select {
 				case <-done:
 					return
@@ -282,12 +303,12 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 						break
 					}
 					if err != nil {
-						fmt.Println("could not read from file")
+						log.Error("could not read from unit file:", err)
 					}
 					written, err := rw.Write(b1[:n1])
 					byteRange = byteRange - written
 					if err != nil {
-						log.Fatalln(err)
+						log.Error("could not write genesis file:", err)
 					}
 				} else if byteRange == 0 {
 					break
@@ -298,18 +319,18 @@ func sendResponse(rw http.ResponseWriter, req *http.Request, units []string, fil
 						break
 					}
 					if err != nil {
-						fmt.Println("could not read from file")
+						log.Error("could not read from unit file:", err)
 					}
-					rw.Write(b2[:n2])
-					byteRange = 0
+					written, err := rw.Write(b2[:n2])
+					byteRange = byteRange - written
 				}
-
 			}
 		}
 	}
 }
 
-func getBytes(bytes string) (int, int) {
+// getByteRange returns byte range as string for request header
+func getByteRange(bytes string) (int, int) {
 	bytes = strings.Split(bytes, "=")[1]
 
 	var from, _ = strconv.Atoi(strings.Split(bytes, "-")[0])
@@ -318,6 +339,7 @@ func getBytes(bytes string) (int, int) {
 	return from, to
 }
 
+// generateMD5 starts generating MD5 file for specified genesis type
 func generateMD5(genesisType string, latestUnit int, latestEpoch int, categoryName string) {
 	// set category
 	var category *api.Category
@@ -328,16 +350,18 @@ func generateMD5(genesisType string, latestUnit int, latestEpoch int, categoryNa
 	}
 
 	var filename = config.Md5sPath + categoryName + "-" + strconv.Itoa(latestEpoch) + "-" + genesisType + ".g" + ".md5"
-	// get hash from slices
 
+	// get array of units
 	var units = api.GetUnitsArray(genesisType, latestUnit, "")
+
+	// get hash from slices
 	hasher := md5.New()
 
 	for _, unit := range units {
 
 		file, err := os.Open(category.UnitsPath + unit)
 		if err != nil {
-			fmt.Println("could not open file")
+			log.Error("could not open unit file:", err)
 			return
 		}
 
@@ -350,7 +374,7 @@ func generateMD5(genesisType string, latestUnit int, latestEpoch int, categoryNa
 			}
 
 			if err != nil {
-				fmt.Println("could not read from file")
+				log.Error("could not read from unit file:", err)
 			}
 
 			hasher.Write(b1[:n1])
@@ -392,19 +416,23 @@ func generateMD5(genesisType string, latestUnit int, latestEpoch int, categoryNa
 		// after check generate md5 file
 		f, err := os.Create(filename)
 		if err != nil {
-			fmt.Println("could not create file")
+			log.Error("could not create md5 file:", err)
 			return
 		}
-		f.Write([]byte(hex.EncodeToString(hasher.Sum(nil))))
+		_, err = f.Write([]byte(hex.EncodeToString(hasher.Sum(nil))))
+		if err != nil {
+			log.Error("could not write to md5 file:", err)
+		}
 
-		api.UpdateData(&db, &config)
-		fmt.Println("Generating MD5 for " + categoryName + "-" + genesisType + " is done.")
+		api.UpdateData(&db, &config, log)
+		log.Info("Generating MD5 for " + categoryName + "-" + genesisType + " is done.")
 	} else {
-		fmt.Println("MD5 for " + categoryName + "-" + genesisType + " is already generated")
+		log.Info("MD5 for " + categoryName + "-" + genesisType + " is already generated")
 	}
 
 }
 
+// sendHashToServer sends calculated hash to other servers to verify genesis
 func sendHashToServer(hash string, server string, password string, category string, genesisType string) {
 	var hashRequest = CheckHash{
 		Hash:     hash,
@@ -414,20 +442,31 @@ func sendHashToServer(hash string, server string, password string, category stri
 		Type:     genesisType,
 	}
 
-	postBody, _ := json.Marshal(hashRequest)
+	postBody, err := json.Marshal(hashRequest)
+	if err != nil {
+		log.Error("could not marshal post request data:", err)
+	}
+
 	responseBody := bytes.NewBuffer(postBody)
 
 	resp, err := http.Post(server+"hash/", "application/json", responseBody)
 
 	if err != nil {
-		log.Fatalf("An Error Occured %v", err)
+		log.Error("could not send post request:", err)
 	}
-	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	defer func() {
+		err = resp.Body.Close()
+		if err != nil {
+			log.Error("could not close response body:", err)
+		}
+	}()
+
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		log.Error("could not read from response body:", err)
 	}
 	sb := string(body)
-	log.Printf(sb)
+	//print response from compare server
+	log.Info(sb)
 }

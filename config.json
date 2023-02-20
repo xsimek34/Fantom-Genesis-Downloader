@@ -2,6 +2,7 @@
   "port" : "1111",
   "server_name" : "1111",
   "db_path" : "db.json",
+  "backup_db_path" : "backup_db.json",
   "md5s_path": "/var/data/md5/",
   "static_files_path": "/var/data/static/",
   "password": "1OZVijnfGCZ4QUxGU6lorQIbtpw6VYr",
@@ -85,8 +86,14 @@
       "description": "Public TestNet Genesis Files",
       "units_path" : "/var/data/units/",
       "compare_servers": [
-        "http://105.25.36.150/",
-        "http://249.27.39.102/"
+        {
+          "server_name": "2222",
+          "url" : "http://localhost:2222/"
+        },
+        {
+          "server_name" : "3333",
+          "url" : "http://localhost:3333/"
+        }
       ],
       "dynamic_files": [
         {
